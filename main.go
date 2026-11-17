@@ -39,9 +39,14 @@ func run() error {
 	})
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"message": "Welcome to CampusSpace API",
-			"status":  "success",
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"success": true,
+			"message": "CampusSpace Backend API is running",
+			"data": fiber.Map{
+				"service": "CampusSpace-Backend",
+				"version": "1.0.0",
+			},
+			"errors": nil,
 		})
 	})
 
