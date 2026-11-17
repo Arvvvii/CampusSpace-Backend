@@ -39,7 +39,7 @@ Contoh response `200 OK`:
 }
 ```
 
-Catatan integrasi: endpoint awal yang saat ini pernah dibuat di `main.go` menggunakan bentuk response berbeda (`message` dan `status`). Jika spesifikasi envelope ini dipakai, Arvi perlu menyelaraskan implementasi endpoint `/` dengan helper response.
+Implementasi aktual `GET /` di `main.go` telah menggunakan response envelope standar. Endpoint ini mengonfirmasi bahwa proses API merespons, tetapi tidak melakukan pemeriksaan koneksi database secara terpisah.
 
 ## 3. Modul Rooms — MVP wajib
 
