@@ -18,6 +18,9 @@ var (
 
 	// ErrRoomNotActive dikembalikan ketika ruangan berstatus nonaktif saat mencoba melakukan reservasi.
 	ErrRoomNotActive = errors.New("room is not active")
+
+	// ErrInvalidStatusTransition dikembalikan ketika transisi status booking tidak valid atau melanggar aturan status.
+	ErrInvalidStatusTransition = errors.New("invalid booking status transition")
 )
 
 // BookingRepository mendefinisikan kontrak operasi akses data tabel bookings dan booking_logs pada PostgreSQL.
@@ -326,7 +329,7 @@ func (r *bookingRepository) UpdateStatus(ctx context.Context, bookingID int64, t
 	}
 	defer tx.Rollback()
 
-	// 1. Kunci baris booking dengan SELECT ... FOR UPDATE
+	// 1. Kunci baris booking dengan SELECT ... FOR UPDATE untuk mencegah race condition (TOCTOU)
 	var currentStatus string
 	lockBookingQuery := `
 		SELECT status
@@ -342,7 +345,37 @@ func (r *bookingRepository) UpdateStatus(ctx context.Context, bookingID int64, t
 		return err
 	}
 
-	// 2. Perbarui status booking
+	// 2. Validasi konsistensi status dan proteksi status terminal
+	// Status tidak boleh berubah ke status yang sama
+	if currentStatus == toStatus {
+		return ErrInvalidStatusTransition
+	}
+
+	// Status terminal (rejected, cancelled) bersifat final dan tidak boleh diubah kembali
+	if currentStatus == "rejected" || currentStatus == "cancelled" {
+		return ErrInvalidStatusTransition
+	}
+
+	// Evaluasi seluruh matriks transisi resmi
+	switch currentStatus {
+	case "pending":
+		if toStatus != "approved" && toStatus != "rejected" && toStatus != "cancelled" {
+			return ErrInvalidStatusTransition
+		}
+	case "approved":
+		if toStatus != "cancelled" {
+			return ErrInvalidStatusTransition
+		}
+	default:
+		return ErrInvalidStatusTransition
+	}
+
+	// Jika log menyertakan status asal yang diharapkan (optimistic check), verifikasi kesesuaiannya dengan status aktual di basis data
+	if log != nil && log.FromStatus != nil && *log.FromStatus != "" && *log.FromStatus != currentStatus {
+		return ErrInvalidStatusTransition
+	}
+
+	// 3. Perbarui status booking
 	updateQuery := `
 		UPDATE bookings
 		SET status = $1
@@ -353,7 +386,7 @@ func (r *bookingRepository) UpdateStatus(ctx context.Context, bookingID int64, t
 		return err
 	}
 
-	// 3. Catat audit trail ke booking_logs
+	// 4. Catat audit trail ke booking_logs
 	if log != nil {
 		log.BookingID = bookingID
 		log.FromStatus = &currentStatus
